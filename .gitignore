@@ -1,3 +1,4 @@
+.env
 *.db
 key
 dataset/raw/*
