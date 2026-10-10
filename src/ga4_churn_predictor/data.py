@@ -1,3 +1,4 @@
+from ga4_churn_predictor.config import PROCESSED_DATASET_DIR
 from ga4_churn_predictor.config import TEST_SIZE
 from ga4_churn_predictor.config import RANDOM_STATE
 from ga4_churn_predictor.config import TARGET_FEATURE
@@ -38,3 +39,6 @@ y = dataframe[TARGET_FEATURE]
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, random_state=RANDOM_STATE, test_size=TEST_SIZE
 )
+
+pandas.DataFrame(X_test).to_csv(PROCESSED_DATASET_DIR / "x_test.csv", index=False)
+pandas.DataFrame(y_test).to_csv(PROCESSED_DATASET_DIR / "y_test.csv", index=False)

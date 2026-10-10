@@ -1,3 +1,4 @@
+from pandas import DataFrame
 import pandas
 import joblib
 from pathlib import Path
@@ -64,6 +65,7 @@ def predict_single(
 
 def predict_batch(model: Pipeline, data: list[dict]):
     input_dataframe = pandas.DataFrame(data)
+    output_dataframe = input_dataframe.copy()
 
     missing_columns = [
         column for column in REQUIRED_COLUMNS if column not in input_dataframe.columns
@@ -75,9 +77,33 @@ def predict_batch(model: Pipeline, data: list[dict]):
     predictions = model.predict(input_dataframe)
     probabilities = model.predict_proba(input_dataframe)
 
-    output_dataframe = input_dataframe.copy()
     output_dataframe["predicao_classe"] = predictions.astype(int)
     output_dataframe["predicao_probabilidade"] = probabilities[:, 1].round(2)
-    output_dataframe["predicao_status"] = output_dataframe["predicao_classe"].map(lambda x: "Churn" if x == 1 else "Ativo")
+    output_dataframe["predicao_status"] = output_dataframe["predicao_classe"].map(
+        lambda x: "Churn" if x == 1 else "Ativo"
+    )
 
     return output_dataframe.to_dict("records")
+
+
+def predict_dataframe(model: Pipeline, input_dataframe: DataFrame):
+    input_dataframe = input_dataframe.copy()
+    output_dataframe = input_dataframe.copy()
+
+    missing_columns = [
+        column for column in REQUIRED_COLUMNS if column not in input_dataframe.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(f"Colunas faltando: {missing_columns}")
+
+    predictions = model.predict(input_dataframe)
+    probabilities = model.predict_proba(input_dataframe)
+
+    output_dataframe["predicao_classe"] = predictions.astype(int)
+    output_dataframe["predicao_probabilidade"] = probabilities[:, 1].round(2)
+    output_dataframe["predicao_status"] = output_dataframe["predicao_classe"].map(
+        lambda x: "Churn" if x == 1 else "Ativo"
+    )
+
+    return output_dataframe

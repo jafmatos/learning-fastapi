@@ -1,9 +1,10 @@
+from pandas import DataFrame
 import gc as garbage_colector
 from pydantic import TypeAdapter
 from app.schemas.prediction import ChurnInput
 from app.schemas.prediction import ChurnOutput
 from ga4_churn_predictor.predict import load_model
-from ga4_churn_predictor.predict import predict_single, predict_batch
+from ga4_churn_predictor.predict import predict_single, predict_batch, predict_dataframe
 
 churn_output_list_adapter = TypeAdapter(list[ChurnOutput])
 
@@ -56,6 +57,14 @@ class MLService:
         output = predict_batch(self.model, data=data_as_dict_list)
 
         return churn_output_list_adapter.validate_python(output)
+
+    def predict_dataframe(self, data: DataFrame) -> DataFrame:
+        if self.model is None:
+            raise RuntimeError("O modelo não foi carregado")
+
+        output_dataframe = predict_dataframe(self.model, data)
+
+        return output_dataframe
 
 
 ml_service = MLService()

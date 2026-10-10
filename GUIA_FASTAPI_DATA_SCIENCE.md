@@ -25,7 +25,8 @@ Este guia é uma referência completa e prática sobre **FastAPI**, construído 
 9. [Tratamento Robusto de Exceções e Respostas de Erro](#9-tratamento-robusto-de-exceções-e-respostas-de-erro)
 10. [Tarefas em Segundo Plano para MLOps (`BackgroundTasks`)](#10-tarefas-em-segundo-plano-para-mlops-backgroundtasks)
 11. [Containerização com Docker para Produção](#11-containerização-com-docker-para-produção)
-12. [Tabela de Referência Rápida (Cheat Sheet)](#12-tabela-de-referência-rápida-cheat-sheet)
+12. [Upload e Processamento de Arquivos em Data Science (`UploadFile` e `File`)](#12-upload-e-processamento-de-arquivos-em-data-science-uploadfile-e-file)
+13. [Comandos de Terminal Essenciais (Cheat Sheet)](#13-comandos-de-terminal-essenciais-cheat-sheet)
 
 ---
 
@@ -721,17 +722,17 @@ Ao construir APIs, especialmente para servir modelos de Machine Learning, erros 
 
 Para responder corretamente ao cliente, utilizamos os status codes semânticos do protocolo HTTP disponíveis no módulo `fastapi.status`:
 
-| Código | Constante FastAPI | Aplicação Prática em APIs de ML |
-| :--- | :--- | :--- |
-| **200** | `HTTP_200_OK` | Predição ou consulta executada com sucesso (`GET`, `POST`). |
-| **201** | `HTTP_201_CREATED` | Recurso criado com sucesso (ex: novo registro no banco). |
-| **400** | `HTTP_400_BAD_REQUEST` | Payload vazio ou dados inconsistentes enviados pelo cliente. |
-| **401** | `HTTP_401_UNAUTHORIZED` | Chave de API ausente ou inválida. |
-| **403** | `HTTP_403_FORBIDDEN` | Autenticado, mas sem permissão para acessar o recurso. |
-| **404** | `HTTP_404_NOT_FOUND` | Rota, cliente ou modelo inexistente. |
-| **422** | `HTTP_422_UNPROCESSABLE_ENTITY` | Falha automática de validação dos tipos no Pydantic. |
-| **500** | `HTTP_500_INTERNAL_SERVER_ERROR` | Erro inesperado não tratado no código Python (bug). |
-| **503** | `HTTP_503_SERVICE_UNAVAILABLE` | Modelo de Machine Learning não carregado na memória RAM. |
+| Código       | Constante FastAPI                  | Aplicação Prática em APIs de ML                                |
+| :------------ | :--------------------------------- | :---------------------------------------------------------------- |
+| **200** | `HTTP_200_OK`                    | Predição ou consulta executada com sucesso (`GET`, `POST`). |
+| **201** | `HTTP_201_CREATED`               | Recurso criado com sucesso (ex: novo registro no banco).          |
+| **400** | `HTTP_400_BAD_REQUEST`           | Payload vazio ou dados inconsistentes enviados pelo cliente.      |
+| **401** | `HTTP_401_UNAUTHORIZED`          | Chave de API ausente ou inválida.                                |
+| **403** | `HTTP_403_FORBIDDEN`             | Autenticado, mas sem permissão para acessar o recurso.           |
+| **404** | `HTTP_404_NOT_FOUND`             | Rota, cliente ou modelo inexistente.                              |
+| **422** | `HTTP_422_UNPROCESSABLE_ENTITY`  | Falha automática de validação dos tipos no Pydantic.           |
+| **500** | `HTTP_500_INTERNAL_SERVER_ERROR` | Erro inesperado não tratado no código Python (bug).             |
+| **503** | `HTTP_503_SERVICE_UNAVAILABLE`   | Modelo de Machine Learning não carregado na memória RAM.        |
 
 ---
 
@@ -837,7 +838,197 @@ CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ---
 
-## 12. Comandos de Terminal Essenciais (Cheat Sheet)
+## 12. Upload e Processamento de Arquivos em Data Science (`UploadFile` e `File`)
+
+Em aplicações reais de Machine Learning e Ciência de Dados, muitas vezes as requisições não chegam como pequenos payloads JSON. É extremamente comum precisar receber **arquivos brutos**:
+
+* Planilhas **CSV ou Excel** contendo milhares de linhas para inferência em lote (*Batch Inference*);
+* Imagens (**PNG, JPEG**) para modelos de Visão Computacional;
+* Documentos (**PDF, TXT**) para pipelines de NLP ou RAG;
+* Áudios (**WAV, MP3**) para modelos de transcrição (Whisper).
+
+Para receber arquivos, o protocolo HTTP utiliza o formato **`multipart/form-data`** (em vez do tradicional `application/json`).
+
+---
+
+### 12.1 Pré-requisito Obrigatório: `python-multipart`
+
+Para que o FastAPI consiga processar requisições com formulários e uploads de arquivos (`multipart/form-data`), é obrigatório instalar a biblioteca **`python-multipart`**:
+
+```bash
+uv add python-multipart
+```
+
+> **Se você esquecer de instalar:** Ao chamar um endpoint com upload de arquivos, a aplicação retornará erro `500 Internal Server Error` avisando que a biblioteca `python-multipart` não foi encontrada.
+
+---
+
+### 12.2 `bytes = File(...)` vs `UploadFile` (A Escolha Certa)
+
+O FastAPI oferece duas maneiras de declarar o recebimento de arquivos:
+
+| Abordagem                               | Como declarar                       | O que faz por baixo dos panos                                                                                                            | Quando usar                                                                                                                                                                                         |
+| :-------------------------------------- | :---------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`bytes` bruto**               | `arquivo: bytes = File(...)`      | Carrega o arquivo**100% na memória RAM** como uma sequência de bytes puros.                                                      | **Apenas para arquivos minúsculos** (ícones, pequenos textos < 1MB). **Perigo:** se o usuário enviar um CSV de 2GB, sua API vai estourar a RAM e cair (*Crash por Out of Memory*). |
+| **`UploadFile` (Padrão Ouro)** | `arquivo: UploadFile = File(...)` | Utiliza um arquivo em*spool*: grava na memória até ~1MB e, se passar disso, armazena temporariamente em disco de forma transparente. | **Sempre em produção e Data Science**. Suporta streaming assíncrono, não estoura a RAM e fornece metadados do arquivo.                                                                    |
+
+#### Vantagens do `UploadFile`:
+
+* **`arquivo.filename`**: Nome original do arquivo enviado pelo cliente (ex: `clientes_outubro.csv`);
+* **`arquivo.content_type`**: Tipo MIME do arquivo (ex: `text/csv`, `application/pdf`, `image/png`);
+* **`arquivo.file`**: Um objeto de arquivo Python padrão (*file-like object*), que pode ser passado diretamente para funções como `pandas.read_csv(arquivo.file)` sem precisar gravar no disco antes!
+* **Métodos assíncronos úteis**:
+  * `conteudo = await arquivo.read()`: Lê os bytes do arquivo;
+  * `await arquivo.seek(0)`: Volta o ponteiro de leitura para o início;
+  * `await arquivo.close()`: Fecha e libera o arquivo temporário da memória/disco.
+
+---
+
+### 12.3 Caso Real de Data Science: Inferência em Lote via Upload de CSV
+
+Veja como criar um endpoint profissional em `src/app/routers/predict.py` que recebe uma planilha CSV de clientes, valida as colunas e executa a predição com o `pandas` e o `ml_service`:
+
+```python
+import io
+import pandas as pd
+from fastapi import APIRouter, File, UploadFile, HTTPException, status, Security
+from app.services.ml_service import ml_service
+from app.security import validar_api_key
+
+router = APIRouter(prefix="/predict", tags=["Predições"])
+
+@router.post("/upload-csv")
+async def predizer_por_arquivo_csv(
+    arquivo: UploadFile = File(..., description="Planilha CSV contendo as features de clientes"),
+    chave: str = Security(validar_api_key)
+):
+    """
+    Recebe um arquivo CSV via multipart/form-data,
+    processa diretamente no Pandas e retorna as predições.
+    """
+    # 1. Validação da extensão do arquivo
+    if not arquivo.filename.endswith(".csv"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Arquivo inválido: apenas arquivos com extensão '.csv' são aceitos."
+        )
+
+    try:
+        # 2. Lê diretamente no Pandas a partir do stream em memória (sem salvar no disco!)
+        df = pd.read_csv(arquivo.file)
+    
+        # 3. Verifica se o DataFrame não está vazio
+        if df.empty:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="O arquivo CSV enviado está vazio."
+            )
+    
+        # 4. Converte para lista de dicionários e executa a inferência em lote
+        dados_lista = df.to_dict(orient="records")
+        predicoes = ml_service.predict_batch(dados_lista)
+    
+        return {
+            "arquivo_processado": arquivo.filename,
+            "total_linhas": len(df),
+            "predicoes": predicoes
+        }
+    
+    except pd.errors.ParserError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Falha ao processar o CSV: o arquivo está corrompido ou mal formatado."
+        )
+    finally:
+        # 5. Boa prática obrigatória: sempre fechar o arquivo temporário
+        await arquivo.close()
+```
+
+---
+
+### 12.4 Upload de Múltiplos Arquivos (`list[UploadFile]`)
+
+Se você precisar que o cliente envie vários arquivos de uma só vez (ex: vários CSVs de filiais diferentes ou um lote de imagens para classificação):
+
+```python
+from typing import List
+from fastapi import APIRouter, File, UploadFile
+
+router = APIRouter()
+
+@router.post("/upload-multiplos")
+async def upload_multiplos_arquivos(
+    arquivos: List[UploadFile] = File(..., description="Lista de arquivos para processamento")
+):
+    resultados = []
+  
+    for arq in arquivos:
+        resultados.append({
+            "nome": arq.filename,
+            "tipo": arq.content_type
+        })
+        await arq.close()
+    
+    return {"total_arquivos": len(arquivos), "detalhes": resultados}
+```
+
+No Swagger UI (`/docs`), o campo de upload de múltiplos arquivos permite selecionar vários arquivos simultaneamente usando a tecla `Ctrl` ou `Shift`.
+
+---
+
+### 12.5 Devolvendo um CSV Processado para Download (`StreamingResponse`)
+
+Em fluxos de negócio, é comum o analista subir um CSV com 5.000 clientes e esperar **baixar de volta o mesmo CSV com as colunas de predição adicionadas** (`predicao_classe`, `predicao_probabilidade`, `predicao_status`).
+
+O FastAPI suporta isso perfeitamente com `StreamingResponse`:
+
+```python
+import io
+import pandas as pd
+from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi.responses import StreamingResponse
+from app.services.ml_service import ml_service
+
+router = APIRouter()
+
+@router.post("/processar-e-baixar-csv")
+async def processar_e_baixar_csv(arquivo: UploadFile = File(...)):
+    # 1. Lê o CSV enviado
+    df = pd.read_csv(arquivo.file)
+  
+    # 2. Executa a predição e anexa as colunas no próprio DataFrame
+    predicoes = ml_service.predict_batch(df.to_dict(orient="records"))
+    df["predicao_classe"] = [p.predicao_classe for p in predicoes]
+    df["predicao_probabilidade"] = [p.predicao_probabilidade for p in predicoes]
+    df["predicao_status"] = [p.predicao_status for p in predicoes]
+  
+    # 3. Escreve o DataFrame enriquecido diretamente em um buffer de bytes
+    buffer = io.BytesIO()
+    df.to_csv(buffer, index=False, encoding="utf-8")
+    buffer.seek(0)  # Rebobina o cursor para o StreamingResponse ler desde o início
+  
+    await arquivo.close()
+  
+    # 4. Devolve como download direto para o navegador/cliente
+    nome_saida = f"predicoes_{arquivo.filename}"
+    return StreamingResponse(
+        content=buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={nome_saida}"}
+    )
+```
+
+---
+
+### 12.6 Boas Práticas Essenciais ao Lidar com Arquivos
+
+1. **Sempre use `await arquivo.close()`**: Garante que os arquivos temporários em disco criados pelo Starlette sejam liberados, evitando encher o armazenamento do servidor.
+2. **Valide a extensão e o `content_type`**: Nunca confie cegamente no arquivo enviado pelo cliente. Valide tanto o nome (`.csv`, `.xlsx`, `.png`) quanto o MIME type (`arquivo.content_type == "text/csv"`).
+3. **Limite o tamanho máximo**: Em produção, configure o proxy reverso (Nginx, Traefik, AWS API Gateway) para limitar uploads gigantes (ex: máximo de 50MB ou 100MB) para evitar ataques de negação de serviço (DoS).
+
+---
+
+## 13. Comandos de Terminal Essenciais (Cheat Sheet)
 
 ```bash
 # Rodar a API localmente a partir da raiz com hot reload
